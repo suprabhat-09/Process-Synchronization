@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Process Synchronization</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        table { border-collapse: collapse; width: 100%; margin-top: 20px; }
+        table, th, td { border: 1px solid black; padding: 10px; text-align: center; }
+        h2, h3 { color: #333; }
+        .hidden { display: none; }
+        .button { padding: 10px 20px; margin-top: 10px; background-color: #4CAF50; color: white; border: none; cursor: pointer; }
+        .button:hover { background-color: #45a049; }
+        .input-table { margin-bottom: 20px; }
+    </style>
+</head>
+<body>
+
+    <h2>PROCESS SYNCHRONIZATION - Race Condition Check</h2>
+
+    <form id="inputForm">
+        <label for="numProcesses">Number of Processes:</label>
+        <input type="number" id="numProcesses" name="numProcesses" required min="1" /><br><br>
+        
+        <label for="numResources">Number of Resource Types:</label>
+        <input type="number" id="numResources" name="numResources" required min="1" /><br><br>
+
+        <button type="button" class="button" onclick="generateInputFields()">Generate Input Fields</button>
+    </form>
+
+    <div id="inputFields" class="hidden">
+        <h3>Available Resources</h3>
+        <div id="availableResources"></div>
+
+        <h3>Allocation Matrix</h3>
+        <div id="allocationMatrix"></div>
+
+        <h3>Max Matrix</h3>
+        <div id="maxMatrix"></div>
+
+        <button type="button" class="button" onclick="runBankersAlgorithm()">Check Safety</button>
+    </div>
+
+    <div id="result" class="hidden">
+        <h3>Result:</h3>
+        <p id="safeState"></p>
+        <p id="processOrder"></p>
+    </div>
+
+    <div id="explanation" class="hidden">
+        <h3>Explanation:</h3>
+        <p id="outputExplanation"></p>
+    </div>
+
+    <div id="needMatrix" class="hidden">
+        <h3>Need Matrix:</h3>
+        <table id="needTable"></table>
+    </div>
+
+    <button class="button" onclick="toggleVisibility('needMatrix')">Show/Hide Need Matrix</button>
+    <button class="button" onclick="toggleVisibility('explanation')">Show/Hide Explanation</button>
+
+    <script>
+        let numProcesses, numResources;
+
+        function generateInputFields() {
+            numProcesses = parseInt(document.getElementById('numProcesses').value);
+            numResources = parseInt(document.getElementById('numResources').value);
+
+            const availableResourcesDiv = document.getElementById('availableResources');
+            const allocationMatrixDiv = document.getElementById('allocationMatrix');
+            const maxMatrixDiv = document.getElementById('maxMatrix');
+
+            // Clear existing inputs if any
+            availableResourcesDiv.innerHTML = '';
+            allocationMatrixDiv.innerHTML = '';
+            maxMatrixDiv.innerHTML = '';
+
+            // Generate Available Resources input fields
+            availableResourcesDiv.innerHTML = '<h4>Enter Available Resources:</h4>';
+            for (let i = 0; i < numResources; i++) {
+                availableResourcesDiv.innerHTML += `<input type="number" id="available_${i}" placeholder="R${i}" required /> `;
+            }
+
+            // Generate Allocation Matrix input fields
+            allocationMatrixDiv.innerHTML = '<h4>Enter Allocation Matrix:</h4>';
+            for (let i = 0; i < numProcesses; i++) {
+                allocationMatrixDiv.innerHTML += `<div>Process ${i}: `;
+                for (let j = 0; j < numResources; j++) {
+                    allocationMatrixDiv.innerHTML += `<input type="number" id="allocation_${i}_${j}" placeholder="R${j}" required /> `;
+                }
+                allocationMatrixDiv.innerHTML += '</div>';
+            }
+
+            // Generate Max Matrix input fields
+            maxMatrixDiv.innerHTML = '<h4>Enter Max Matrix:</h4>';
+            for (let i = 0; i < numProcesses; i++) {
+                maxMatrixDiv.innerHTML += `<div>Process ${i}: `;
+                for (let j = 0; j < numResources; j++) {
+                    maxMatrixDiv.innerHTML += `<input type="number" id="max_${i}_${j}" placeholder="R${j}" required /> `;
+                }
+                maxMatrixDiv.innerHTML += '</div>';
+            }
+
+            // Show the input fields section
+            document.getElementById('inputFields').classList.remove('hidden');
+        }
+
+        function runBankersAlgorithm() {
+            const available = [];
+            const allocation = [];
+            const max = [];
+
+            // Retrieve Available Resources
+            for (let i = 0; i < numResources; i++) {
+                available.push(parseInt(document.getElementById(`available_${i}`).value));
+            }
+
+            // Retrieve Allocation Matrix
+            for (let i = 0; i < numProcesses; i++) {
+                allocation[i] = [];
+                for (let j = 0; j < numResources; j++) {
+                    allocation[i].push(parseInt(document.getElementById(`allocation_${i}_${j}`).value));
+                }
+            }
+
+            // Retrieve Max Matrix
+            for (let i = 0; i < numProcesses; i++) {
+                max[i] = [];
+                for (let j = 0; j < numResources; j++) {
+                    max[i].push(parseInt(document.getElementById(`max_${i}_${j}`).value));
+                }
+            }
+
+            const need = calculateNeedMatrix(max, allocation);
+            const { isSafe, safeSequence } = isSystemSafe(available, allocation, need, numProcesses, numResources);
+
+            displayResult(isSafe, safeSequence);
+            displayNeedMatrix(need);
+            displayExplanation(isSafe, safeSequence);
+        }
+
+        function calculateNeedMatrix(max, allocation) {
+            const need = [];
+            for (let i = 0; i < max.length; i++) {
+                need[i] = [];
+                for (let j = 0; j < max[i].length; j++) {
+                    need[i][j] = max[i][j] - allocation[i][j];
+                }
+            }
+            return need;
+        }
+
+        function isSystemSafe(available, allocation, need, numProcesses, numResources) {
+            const work = [...available];
+            const finish = Array(numProcesses).fill(false);
+            const safeSequence = [];
+
+            let processCount = 0;
+
+            while (processCount < numProcesses) {
+                let found = false;
+                for (let p = 0; p < numProcesses; p++) {
+                    if (!finish[p]) {
+                        let canAllocate = true;
+                        for (let r = 0; r < numResources; r++) {
+                            if (need[p][r] > work[r]) {
+                                canAllocate = false;
+                                break;
+                            }
+                        }
+
+                        if (canAllocate) {
+                            for (let r = 0; r < numResources; r++) {
+                                work[r] += allocation[p][r];
+                            }
+                            safeSequence.push(p);
+                            finish[p] = true;
+                            found = true;
+                            processCount++;
+                        }
+                    }
+                }
+
+                if (!found) {
+                    return { isSafe: false, safeSequence: [] };
+                }
+            }
+
+            return { isSafe: true, safeSequence };
+        }
+
+        function displayResult(isSafe, safeSequence) {
+            const resultDiv = document.getElementById('result');
+            resultDiv.classList.remove('hidden');
+            document.getElementById('safeState').innerText = isSafe ? 'System is in a Safe State.' : 'System is not in a Safe State.';
+            document.getElementById('processOrder').innerText = isSafe ? `Safe Sequence: P${safeSequence.join(' -> P')}` : 'No Safe Sequence found.';
+        }
+
+        function displayExplanation(isSafe, safeSequence) {
+            const explanationDiv = document.getElementById('explanation');
+            const outputExplanation = document.getElementById('outputExplanation');
+            explanationDiv.classList.remove('hidden');
+
+            if (isSafe) {
+                outputExplanation.innerHTML = `
+                    The system is in a safe state because all processes can complete execution without causing a deadlock.
+                    <br><br>
+                    The safe sequence found is: <b>P${safeSequence.join(' -> P')}</b>.
+                    <br><br>
+                    In this sequence, each process is allocated the necessary resources and completes execution, releasing the resources for the next process in line.
+                    This guarantees that no process is left waiting indefinitely, and the system avoids a deadlock.
+                `;
+            } else {
+                outputExplanation.innerHTML = `
+                    The system is not in a safe state because the available resources are insufficient to safely allocate resources to all processes.
+                    <br><br>
+                    At least one process would be left in an indefinite wait, which leads to a potential deadlock.
+                `;
+            }
+        }
+
+        function displayNeedMatrix(need) {
+            const needMatrixDiv = document.getElementById('needMatrix');
+            const needTable = document.getElementById('needTable');
+            needMatrixDiv.classList.remove('hidden');
+
+            needTable.innerHTML = '';
+            let headerRow = '<tr><th>Process</th>';
+            for (let r = 0; r < numResources; r++) {
+                headerRow += `<th>R${r}</th>`;
+            }
+            headerRow += '</tr>';
+            needTable.innerHTML += headerRow;
+
+            for (let i = 0; i < need.length; i++) {
+                let row = `<tr><td>P${i}</td>`;
+                for (let j = 0; j < need[i].length; j++) {
+                    row += `<td>${need[i][j]}</td>`;
+                }
+                row += '</tr>';
+                needTable.innerHTML += row;
+            }
+        }
+
+        function toggleVisibility(divId) {
+            const element = document.getElementById(divId);
+            element.classList.toggle('hidden');
+        }
+    </script>
+
+</body>
+</html>
